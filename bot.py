@@ -16,7 +16,7 @@ from telegram.error import Conflict
 from shazamio import Shazam
 import yt_dlp
 
-BOT_TOKEN = "8979038991:AAG9p9kDMsbOVfO61nKWTOaMInrE_wIYzkQ8979038991:AAG9p9kDMsbOVfO61nKWTOaMInrE_wIYzkQ"
+BOT_TOKEN = "8979038991:AAG9p9kDMsbOVfO61nKWTOaMInrE_wIYzkQ"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
