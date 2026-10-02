@@ -2,5 +2,5 @@ python-telegram-bot
 shazamio
 yt-dlp
 pydub
-requests
+audioop-lts
 
