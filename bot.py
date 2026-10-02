@@ -43,8 +43,14 @@ def download_audio_yt(query: str, output_path: str) -> bool:
         'no_warnings': True,
         'default_search': 'ytsearch1:',
         'noplaylist': True,
+        # Force yt-dlp to use YouTube Android/iOS client APIs to bypass cloud IP bot checks
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios', 'web']
+            }
+        },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+            'User-Agent': 'Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0'
         },
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
