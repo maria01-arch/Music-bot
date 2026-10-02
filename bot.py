@@ -3,6 +3,7 @@ import sys
 import asyncio
 import logging
 import warnings
+import requests
 
 # Suppress harmless pydub ffmpeg warning
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pydub")
@@ -13,7 +14,6 @@ from telegram.error import Conflict
 from shazamio import Shazam
 import yt_dlp
 
-# Replace this string with your actual bot token from BotFather
 BOT_TOKEN = "8979038991:AAG9p9kDMsbOVfO61nKWTOaMInrE_wIYzkQ"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -36,33 +36,66 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 def download_audio_yt(query: str, output_path: str) -> bool:
-    # List of search strategies to try sequentially
-    search_strategies = [
-        # Strategy 1: YouTube Android/iOS Client Search
-        {
-            'default_search': 'ytsearch1:',
-            'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
-        },
-        # Strategy 2: Default YouTube Search
-        {
-            'default_search': 'ytsearch1:',
-            'extractor_args': {},
-        },
-        # Strategy 3: SoundCloud Fallback
-        {
-            'default_search': 'scsearch1:',
-            'extractor_args': {},
-        }
-    ]
+    mp3_path = f"{output_path}.mp3"
 
-    base_opts = {
+    # STRATEGY 1: Public Cobalt API (Bypasses Datacenter IP Blocks)
+    try:
+        ydl_meta_opts = {
+            'default_search': 'ytsearch1:',
+            'skip_download': True,
+            'quiet': True,
+            'no_warnings': True,
+        }
+        
+        video_url = None
+        with yt_dlp.YoutubeDL(ydl_meta_opts) as ydl:
+            info = ydl.extract_info(query, download=False)
+            if info and 'entries' in info and len(info['entries']) > 0:
+                video_url = info['entries'][0].get('webpage_url')
+            elif info and 'webpage_url' in info:
+                video_url = info['webpage_url']
+
+        if video_url:
+            cobalt_payload = {
+                "url": video_url,
+                "downloadMode": "audio",
+                "audioFormat": "mp3"
+            }
+            cobalt_headers = {
+                "Accept": "application/json",
+                "Content-Type": "application/json"
+            }
+            
+            cobalt_response = requests.post("https://api.cobalt.tools/", json=cobalt_payload, headers=cobalt_headers, timeout=15)
+            
+            if cobalt_response.status_code == 200:
+                data = cobalt_response.json()
+                media_link = data.get("url")
+                
+                if media_link:
+                    audio_res = requests.get(media_link, stream=True, timeout=30)
+                    if audio_res.status_code == 200:
+                        with open(mp3_path, 'wb') as f:
+                            for chunk in audio_res.iter_content(chunk_size=8192):
+                                f.write(chunk)
+                        if os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 0:
+                            return True
+    except Exception as e:
+        print(f"Cobalt API extraction failed: {e}")
+
+    # STRATEGY 2: yt-dlp direct fallback with Android client spoofing
+    fallback_opts = {
         'format': 'bestaudio/best',
         'outtmpl': f"{output_path}.%(ext)s",
-        'quiet': False,
+        'quiet': True,
         'no_warnings': True,
         'noplaylist': True,
-        'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        'ignoreerrors': True,
+        'default_search': 'ytsearch1:',
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android', 'ios'],
+            }
         },
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
@@ -71,17 +104,13 @@ def download_audio_yt(query: str, output_path: str) -> bool:
         }],
     }
 
-    for strategy in search_strategies:
-        ydl_opts = {**base_opts, **strategy}
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                info = ydl.extract_info(query, download=True)
-                # Check if an actual entry was found and downloaded
-                if info and ('entries' not in info or len(info['entries']) > 0):
-                    return True
-        except Exception as e:
-            print(f"Strategy failed for query '{query}': {e}")
-            continue
+    try:
+        with yt_dlp.YoutubeDL(fallback_opts) as ydl:
+            ydl.extract_info(query, download=True)
+            if os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 0:
+                return True
+    except Exception as e:
+        print(f"yt-dlp fallback failed: {e}")
 
     return False
 
@@ -175,6 +204,6 @@ if __name__ == '__main__':
     app.add_handler(CallbackQueryHandler(handle_callback_query))
     app.add_error_handler(error_handler)
     
-    print("samzyslib bot is running...")
+    print("Bot is running...")
     app.run_polling(drop_pending_updates=True)
 
