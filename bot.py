@@ -36,21 +36,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 def download_audio_yt(query: str, output_path: str) -> bool:
-    ydl_opts = {
+    # List of search strategies to try sequentially
+    search_strategies = [
+        # Strategy 1: YouTube Android/iOS Client Search
+        {
+            'default_search': 'ytsearch1:',
+            'extractor_args': {'youtube': {'player_client': ['android', 'ios']}},
+        },
+        # Strategy 2: Default YouTube Search
+        {
+            'default_search': 'ytsearch1:',
+            'extractor_args': {},
+        },
+        # Strategy 3: SoundCloud Fallback
+        {
+            'default_search': 'scsearch1:',
+            'extractor_args': {},
+        }
+    ]
+
+    base_opts = {
         'format': 'bestaudio/best',
         'outtmpl': f"{output_path}.%(ext)s",
         'quiet': False,
         'no_warnings': True,
-        'default_search': 'ytsearch1:',
         'noplaylist': True,
-        # Force yt-dlp to use YouTube Android/iOS client APIs to bypass cloud IP bot checks
-        'extractor_args': {
-            'youtube': {
-                'player_client': ['android', 'ios', 'web']
-            }
-        },
         'http_headers': {
-            'User-Agent': 'Mozilla/5.0 (Android 14; Mobile; rv:128.0) Gecko/128.0 Firefox/128.0'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         },
         'postprocessors': [{
             'key': 'FFmpegExtractAudio',
@@ -58,13 +70,20 @@ def download_audio_yt(query: str, output_path: str) -> bool:
             'preferredquality': '192',
         }],
     }
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([query])
-        return True
-    except Exception as e:
-        print(f"yt-dlp download exception: {e}")
-        return False
+
+    for strategy in search_strategies:
+        ydl_opts = {**base_opts, **strategy}
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(query, download=True)
+                # Check if an actual entry was found and downloaded
+                if info and ('entries' not in info or len(info['entries']) > 0):
+                    return True
+        except Exception as e:
+            print(f"Strategy failed for query '{query}': {e}")
+            continue
+
+    return False
 
 async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
@@ -88,7 +107,7 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if track:
         title = track.get('title', 'Unknown')
         subtitle = track.get('subtitle', 'Unknown')
-        search_query = f"{title} - {subtitle}"
+        search_query = f"{title} {subtitle}"
         await process_and_send_audio(status_msg, search_query)
     else:
         await status_msg.edit_text("❌ *Could not recognize audio.*", parse_mode='Markdown')
