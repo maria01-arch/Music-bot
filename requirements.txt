@@ -1,3 +1,4 @@
 python-telegram-bot
 shazamio
 yt-dlp
+audioop-lts
