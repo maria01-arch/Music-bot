@@ -1,9 +1,11 @@
 import os
 import sys
+import json
 import asyncio
 import logging
 import warnings
-import requests
+import urllib.request
+import urllib.parse
 
 # Suppress harmless pydub ffmpeg warning
 warnings.filterwarnings("ignore", category=RuntimeWarning, module="pydub")
@@ -14,7 +16,7 @@ from telegram.error import Conflict
 from shazamio import Shazam
 import yt_dlp
 
-BOT_TOKEN = "8979038991:AAG9p9kDMsbOVfO61nKWTOaMInrE_wIYzkQ"
+BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -38,7 +40,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def download_audio_yt(query: str, output_path: str) -> bool:
     mp3_path = f"{output_path}.mp3"
 
-    # STRATEGY 1: Public Cobalt API (Bypasses Datacenter IP Blocks)
+    # STRATEGY 1: Public Cobalt API via urllib
     try:
         ydl_meta_opts = {
             'default_search': 'ytsearch1:',
@@ -56,28 +58,34 @@ def download_audio_yt(query: str, output_path: str) -> bool:
                 video_url = info['webpage_url']
 
         if video_url:
-            cobalt_payload = {
+            payload = json.dumps({
                 "url": video_url,
                 "downloadMode": "audio",
                 "audioFormat": "mp3"
-            }
-            cobalt_headers = {
-                "Accept": "application/json",
-                "Content-Type": "application/json"
-            }
-            
-            cobalt_response = requests.post("https://api.cobalt.tools/", json=cobalt_payload, headers=cobalt_headers, timeout=15)
-            
-            if cobalt_response.status_code == 200:
-                data = cobalt_response.json()
-                media_link = data.get("url")
-                
-                if media_link:
-                    audio_res = requests.get(media_link, stream=True, timeout=30)
-                    if audio_res.status_code == 200:
-                        with open(mp3_path, 'wb') as f:
-                            for chunk in audio_res.iter_content(chunk_size=8192):
+            }).encode('utf-8')
+
+            req = urllib.request.Request(
+                "https://api.cobalt.tools/",
+                data=payload,
+                headers={
+                    "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0"
+                },
+                method="POST"
+            )
+
+            with urllib.request.urlopen(req, timeout=15) as response:
+                if response.status == 200:
+                    data = json.loads(response.read().decode('utf-8'))
+                    media_link = data.get("url")
+
+                    if media_link:
+                        file_req = urllib.request.Request(media_link, headers={"User-Agent": "Mozilla/5.0"})
+                        with urllib.request.urlopen(file_req, timeout=30) as audio_res, open(mp3_path, 'wb') as f:
+                            while chunk := audio_res.read(8192):
                                 f.write(chunk)
+
                         if os.path.exists(mp3_path) and os.path.getsize(mp3_path) > 0:
                             return True
     except Exception as e:
